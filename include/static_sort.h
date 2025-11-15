@@ -1,12 +1,4 @@
-/*
- Copyright (c) 2020 Kang Yue Sheng Benjamin.
- 
- Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
- 
- The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
- 
- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
- */
+
 
 #ifndef static_sort_h
 #define static_sort_h
@@ -86,77 +78,65 @@ template <unsigned NumElements> class StaticSort
 	
 	template <class A, class C, int I, int M> struct PS <A, C, I, M, 1>
 	{
-		inline PS(A &a, C c) {}
+		inline PS([[maybe_unused]] A &a, [[maybe_unused]] C c) {}
 	};
 	
 public:
-	/**
-	 * Sorts the array/container arr.
-	 * \param  arr  The array/container to be sorted.
-	 */
-	template <class Container>
-	inline void operator() (Container &arr) const
-	{
-		PS<Container, LT, 1, NumElements, (NumElements <= 1)> ps(arr, LT());
-	};
-	
-	/**
-	 * Sorts the array arr.
-	 * \param  arr  The array to be sorted.
-	 */
-	template <class T>
-	inline void operator() (T *arr) const
-	{
-		PS<T*, LT, 1, NumElements, (NumElements <= 1)> ps(arr, LT());
-	};
-	
-	/**
-	 * Sorts the array/container arr.
-	 * \param  arr     The array/container to be sorted.
-	 * \tparam Compare The less than comparator.
-	 */
-	template <class Container, class Compare>
-	inline void operator() (Container &arr, Compare &lt) const
-	{
-		typedef Compare & C;
-		PS<Container, C, 1, NumElements, (NumElements <= 1)> ps(arr, lt);
-	};
-	
-	/**
-	 * Sorts the array arr.
-	 * \param  arr     The array to be sorted.
-	 * \tparam Compare The less than comparator.
-	 */
-	template <class T, class Compare>
-	inline void operator() (T *arr, Compare &lt) const
-	{
-		typedef Compare & C;
-		PS<T*, C, 1, NumElements, (NumElements <= 1)> ps(arr, lt);
-	};
-	
-	/**
-	 * Sorts the array/container arr.
-	 * \param  arr     The array/container to be sorted.
-	 * \tparam Compare The less than comparator.
-	 */
-	template <class Container, class Compare>
-	inline void operator() (Container &arr, const Compare &lt) const
-	{
-		typedef const Compare & C;
-		PS<Container, C, 1, NumElements, (NumElements <= 1)> ps(arr, lt);
-	};
-	
-	/**
-	 * Sorts the array arr.
-	 * \param  arr     The array to be sorted.
-	 * \tparam Compare The less than comparator.
-	 */
-	template <class T, class Compare>
-	inline void operator() (T *arr, const Compare &lt) const
-	{
-		typedef const Compare & C;
-		PS<T*, C, 1, NumElements, (NumElements <= 1)> ps(arr, lt);
-	};
+  // Version conteneur (comportement existant)
+  template <class Container>
+  inline void operator() (Container &arr) const
+  {
+    PS<Container, LT, 1, NumElements, (NumElements <= 1)> ps(arr, LT());
+  }
+
+  // Version itérateurs
+  template <std::random_access_iterator Iterator>
+  inline void operator() (Iterator first, Iterator last) const
+  {
+    auto size = std::distance(first, last);
+    if (size != NumElements) return; // Sécurité
+
+    // Adapter pour utiliser les itérateurs comme un tableau
+    auto adapter = [first](size_t i) -> decltype(auto) { return *(first + i); };
+
+    struct IteratorAdapter {
+      Iterator base;
+      decltype(auto) operator[](size_t i) { return *(base + i); }
+    };
+
+    IteratorAdapter adapted{first};
+    PS<IteratorAdapter, LT, 1, NumElements, (NumElements <= 1)> ps(adapted, LT());
+  }
+
+  // Version avec comparateur personnalisé
+  template <std::random_access_iterator Iterator, class Compare>
+  inline void operator() (Iterator first, Iterator last, Compare lt) const
+  {
+    auto size = std::distance(first, last);
+    if (size != NumElements) return;
+
+    struct IteratorAdapter {
+      Iterator base;
+      decltype(auto) operator[](size_t i) { return *(base + i); }
+    };
+
+    IteratorAdapter adapted{first};
+    typedef Compare & C;
+    PS<IteratorAdapter, C, 1, NumElements, (NumElements <= 1)> ps(adapted, lt);
+  }
+
+  // Version C++20 ranges
+  template <std::ranges::random_access_range R>
+  inline void operator() (R&& range) const
+  {
+    (*this)(std::ranges::begin(range), std::ranges::end(range));
+  }
+
+  template <std::ranges::random_access_range R, class Compare>
+  inline void operator() (R&& range, Compare lt) const
+  {
+    (*this)(std::ranges::begin(range), std::ranges::end(range), lt);
+  }
 };
 
 
@@ -182,9 +162,9 @@ template <unsigned NumElements> class StaticTimSort
 	template <class A, class C> struct Intro
 	{
 		template <class T>
-		static inline void reverse(T _, A &a)
+		static inline void reverse([[maybe_unused]] T _, A &a)
 		{
-			if (NumElements > 1) {
+			if constexpr( NumElements > 1) {
 				unsigned left = 0, right = NumElements - 1;
 				while (left < right) {
 					T temp = a[left];
@@ -197,7 +177,7 @@ template <unsigned NumElements> class StaticTimSort
 		template <class T>
 		static inline bool sorted(T prev, A &a, C c)
 		{
-			if (NumElements < 8) return false;
+			if constexpr (NumElements < 8) return false;
 			
 			bool hasDecreasing = false;
 			bool hasIncreasing = false;
@@ -211,10 +191,14 @@ template <unsigned NumElements> class StaticTimSort
 					hasIncreasing = true;
 				}
 				prev = curr;
-				if (NumElements > 22)
-					if (hasIncreasing && hasDecreasing)
-						return false;
-			}
+        if constexpr( NumElements > 22)
+        {
+          if (hasIncreasing && hasDecreasing)
+          {
+            return false;
+          }
+        }
+      }
 			if (!hasDecreasing) {
 				return true;
 			}
@@ -229,78 +213,61 @@ template <unsigned NumElements> class StaticTimSort
 	
 	
 public:
-	/**
-	 * Sorts the array/container arr.
-	 * \param  arr  The array/container to be sorted.
-	 */
-	template <class Container>
-	inline void operator() (Container &arr) const
-	{
-		if (!Intro<Container, LT>::sorted(arr[0], arr, LT()))
-			StaticSort<NumElements>()(arr);
-	};
-	
-	/**
-	 * Sorts the array arr.
-	 * \param  arr  The array to be sorted.
-	 */
-	template <class T>
-	inline void operator() (T *arr) const
-	{
-		if (!Intro<T*, LT>::sorted(arr[0], arr, LT()))
-			StaticSort<NumElements>()(arr);
-	};
-	
-	/**
-	 * Sorts the array/container arr.
-	 * \param  arr     The array/container to be sorted.
-	 * \tparam Compare The less than comparator.
-	 */
-	template <class Container, class Compare>
-	inline void operator() (Container &arr, Compare &lt) const
-	{
-		typedef Compare & C;
-		if (!Intro<Container, C>::sorted(arr[0], arr, lt))
-			StaticSort<NumElements>()(arr, lt);
-	};
-	
-	/**
-	 * Sorts the array arr.
-	 * \param  arr     The array to be sorted.
-	 * \tparam Compare The less than comparator.
-	 */
-	template <class T, class Compare>
-	inline void operator() (T *arr, Compare &lt) const
-	{
-		typedef Compare & C;
-		if (!Intro<T*, C>::sorted(arr[0], arr, lt))
-			StaticSort<NumElements>()(arr, lt);
-	};
-	
-	/**
-	 * Sorts the array/container arr.
-	 * \param  arr     The array/container to be sorted.
-	 * \tparam Compare The less than comparator.
-	 */
-	template <class Container, class Compare>
-	inline void operator() (Container &arr, const Compare &lt) const
-	{
-		typedef const Compare & C;
-		if (!Intro<Container, C>::sorted(arr[0], arr, lt))
-			StaticSort<NumElements>()(arr, lt);
-	};
-	
-	/**
-	 * Sorts the array arr.
-	 * \param  arr     The array to be sorted.
-	 * \tparam Compare The less than comparator.
-	 */
-	template <class T, class Compare>
-	inline void operator() (T *arr, const Compare &lt) const
-	{
-		typedef const Compare & C;
-		if (!Intro<T*, C>::sorted(arr[0], arr, lt))
-			StaticSort<NumElements>()(arr, lt);
-	};
+public:
+  // Version conteneur (comportement existant)
+  template <class Container>
+  inline void operator() (Container &arr) const
+  {
+    if (!Intro<Container, LT>::sorted(arr[0], arr, LT()))
+      StaticSort<NumElements>()(arr);
+  }
+
+  // Version itérateurs
+  template <std::random_access_iterator Iterator>
+  inline void operator() (Iterator first, Iterator last) const
+  {
+    auto size = std::distance(first, last);
+    if (size != NumElements) return;
+
+    struct IteratorAdapter {
+      Iterator base;
+      decltype(auto) operator[](size_t i) { return *(base + i); }
+    };
+
+    IteratorAdapter adapted{first};
+    if (!Intro<IteratorAdapter, LT>::sorted(adapted[0], adapted, LT()))
+      StaticSort<NumElements>()(first, last);
+  }
+
+  // Version avec comparateur
+  template <std::random_access_iterator Iterator, class Compare>
+  inline void operator() (Iterator first, Iterator last, Compare lt) const
+  {
+    auto size = std::distance(first, last);
+    if (size != NumElements) return;
+
+    struct IteratorAdapter {
+      Iterator base;
+      decltype(auto) operator[](size_t i) { return *(base + i); }
+    };
+
+    IteratorAdapter adapted{first};
+    typedef Compare & C;
+    if (!Intro<IteratorAdapter, C>::sorted(adapted[0], adapted, lt))
+      StaticSort<NumElements>()(first, last, lt);
+  }
+
+  // Version C++20 ranges
+  template <std::ranges::random_access_range R>
+  inline void operator() (R&& range) const
+  {
+    (*this)(std::ranges::begin(range), std::ranges::end(range));
+  }
+
+  template <std::ranges::random_access_range R, class Compare>
+  inline void operator() (R&& range, Compare lt) const
+  {
+    (*this)(std::ranges::begin(range), std::ranges::end(range), lt);
+  }
 };
 #endif

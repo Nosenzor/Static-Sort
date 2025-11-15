@@ -61,8 +61,40 @@ Works on std::vectors, plain old arrays, or other array-like objects.
 
 Accepts custom less than comparator.
 
-Benchmarks
-----------
+Performance
+-----------
+
+### Modern Benchmarks (2025)
+
+Using Google Benchmark on Apple M-series CPU with -O3 -march=native optimizations:
+
+**Random Data (Worst Case):**
+| Elements | std::sort | StaticSort | StaticTimSort | Improvement |
+|----------|-----------|------------|---------------|-------------|
+| 2        | 18.7 ns   | 18.2 ns    | 18.2 ns       | 2.7%        |
+| 3        | 26.5 ns   | 24.6 ns    | 24.7 ns       | 7.2%        |
+| 4        | 36.7 ns   | 34.1 ns    | 34.2 ns       | 7.1%        |
+| 5        | 45.5 ns   | 41.5 ns    | 41.5 ns       | 8.8%        |
+| 6        | 52.7 ns   | 48.6 ns    | 48.8 ns       | 7.8%        |
+| 7        | 61.7 ns   | 54.5 ns    | 54.6 ns       | 11.7%       |
+| 8        | 72.0 ns   | 66.2 ns    | 66.3 ns       | 8.1%        |
+
+**Sorted Data (Best Case for TimSort):**
+| Elements | StaticTimSort Random | StaticTimSort Sorted | Speedup |
+|----------|---------------------|----------------------|---------|
+| 8        | 66.3 ns             | 1.93 ns              | 34x     |
+| 16       | 59.7 ns             | 2.46 ns              | 24x     |
+
+**Key Optimizations:**
+- Branchless swap for trivial types (uses CMOV instructions)
+- Optimal sorting networks (minimal comparisons)
+- Template specializations for 2-8 elements
+- Force-inlined critical paths
+- Zero-overhead abstractions with C++20
+
+See [OPTIMIZATIONS.md](OPTIMIZATIONS.md) for detailed analysis.
+
+### Legacy Benchmarks
 
 Here are the number of milliseconds taken to sort 1 million arrays of ints.  
 Compiled with clang -O3, a Macbook Air (Mid-2012) Intel i7-3667U 2GHz.

@@ -1,7 +1,11 @@
-
-
 #ifndef static_sort_h
 #define static_sort_h
+
+#include <algorithm>
+#include <iterator>
+#include <ranges>
+#include <concepts>
+#include <type_traits>
 
 /*
  Adapted from the Bose-Nelson Sorting network code from:
@@ -13,128 +17,194 @@
  * compile time generated Bose-Nelson sorting network.
  * \tparam NumElements  The number of elements in the array or container to sort.
  */
-template <unsigned NumElements> class StaticSort
+
+template <typename T>
+concept Swappable = requires(T a, T b) {
+  { a = b } -> std::convertible_to<T&>;
+};
+
+template <typename C, typename T>
+concept Comparator = requires(C c, T a, T b) {
+  { c(a, b) } -> std::convertible_to<bool>;
+};
+
+
+template <unsigned NumElements>
+class StaticSort
 {
-	// Default less than comparator
-	struct LT
-	{
-		template <class A, class B>
-		inline bool operator () (const A &a, const B &b) const
-		{
-			return a < b;
-		}
-	};
-	
-	template <class A, class C, int I0, int I1> struct Swap
-	{
-		template <class T> inline void s(T &v0, T &v1, C c)
-		{
-			// Explicitly code out the Min and Max to nudge the compiler
-			// to generate branchless code where applicable.
-			T t = c(v0, v1) ? v0 : v1; // Min
-			v1 = c(v0, v1) ? v1 : v0; // Max
-			v0 = t;
-		}
-		
-		inline Swap(A &a, C c) { s(a[I0], a[I1], c); }
-	};
-	
-	template <class A, class C, int I, int J, int X, int Y> struct PB
-	{
-		inline PB(A &a, C c)
-		{
-			enum { L = X >> 1, M = (X & 1 ? Y : Y + 1) >> 1, IAddL = I + L, XSubL = X - L };
-			PB<A, C, I, J, L, M> p0(a, c);
-			PB<A, C, IAddL, J + M, XSubL, Y - M> p1(a, c);
-			PB<A, C, IAddL, J, XSubL, M> p2(a, c);
-		}
-	};
-	
-	template <class A, class C, int I, int J> struct PB <A, C, I, J, 1, 1>
-	{
-		inline PB(A &a, C c) { Swap<A, C, I - 1, J - 1> s(a, c); }
-	};
-	
-	template <class A, class C, int I, int J> struct PB <A, C, I, J, 1, 2>
-	{
-		inline PB(A &a, C c) { Swap<A, C, I - 1, J> s0(a, c); Swap<A, C, I - 1, J - 1> s1(a, c); }
-	};
-	
-	template <class A, class C, int I, int J> struct PB <A, C, I, J, 2, 1>
-	{
-		inline PB(A &a, C c) { Swap<A, C, I - 1, J - 1> s0(a, c); Swap<A, C, I, J - 1> s1(a, c); }
-	};
-	
-	template <class A, class C, int I, int M, int Stop> struct PS
-	{
-		inline PS(A &a, C c)
-		{
-			enum { L = M >> 1, IAddL = I + L, MSubL = M - L};
-			PS<A, C, I, L, (L <= 1)> ps0(a, c);
-			PS<A, C, IAddL, MSubL, (MSubL <= 1)> ps1(a, c);
-			PB<A, C, I, IAddL, L, MSubL> pb(a, c);
-		}
-	};
-	
-	template <class A, class C, int I, int M> struct PS <A, C, I, M, 1>
-	{
-		inline PS([[maybe_unused]] A &a, [[maybe_unused]] C c) {}
-	};
-	
+  struct LT {
+    template <class A, class B>
+    constexpr bool operator()(const A &a, const B &b) const noexcept(noexcept(a < b)) {
+      return a < b;
+    }
+  };
+
+  template <class A, class C, int I0, int I1>
+  struct Swap {
+    template <class T>
+    static constexpr void s(T &v0, T &v1, C c) noexcept(noexcept(c(v0, v1)) && std::is_nothrow_move_constructible_v<T>)
+    {
+      //use move semantics to avoid unnecessary copies
+      if (c(v1, v0))
+      {
+        T tmp = std::move(v0);
+        v0 = std::move(v1);
+        v1 = std::move(tmp);
+      }
+    }
+    constexpr Swap(A &a, C c) noexcept(noexcept(s(a[I0], a[I1], c))) {
+      s(a[I0], a[I1], c);
+    }
+  };
+
+  template <class A, class C, int I, int J, int X, int Y>
+  struct PB {
+    constexpr PB(A &a, C c) {
+      enum { L = X >> 1, M = (X & 1 ? Y : Y + 1) >> 1, IAddL = I + L, XSubL = X - L };
+      PB<A, C, I, J, L, M> p0(a, c);
+      PB<A, C, IAddL, J + M, XSubL, Y - M> p1(a, c);
+      PB<A, C, IAddL, J, XSubL, M> p2(a, c);
+    }
+  };
+  template <class A, class C, int I, int J>
+  struct PB<A, C, I, J, 1, 1> {
+    constexpr PB(A &a, C c) { Swap<A, C, I - 1, J - 1> s(a, c); }
+  };
+  template <class A, class C, int I, int J>
+  struct PB<A, C, I, J, 1, 2> {
+    constexpr PB(A &a, C c) {
+      Swap<A, C, I - 1, J> s0(a, c);
+      Swap<A, C, I - 1, J - 1> s1(a, c);
+    }
+  };
+  template <class A, class C, int I, int J>
+  struct PB<A, C, I, J, 2, 1> {
+    constexpr PB(A &a, C c) {
+      Swap<A, C, I - 1, J - 1> s0(a, c);
+      Swap<A, C, I, J - 1> s1(a, c);
+    }
+  };
+
+  template <class A, class C, int I, int M, int Stop>
+  struct PS {
+    constexpr PS(A &a, C c) {
+      enum { L = M >> 1, IAddL = I + L, MSubL = M - L };
+      PS<A, C, I, L, (L <= 1)> ps0(a, c);
+      PS<A, C, IAddL, MSubL, (MSubL <= 1)> ps1(a, c);
+      PB<A, C, I, IAddL, L, MSubL> pb(a, c);
+    }
+  };
+  template <class A, class C, int I, int M>
+  struct PS<A, C, I, M, 1> {
+    constexpr PS([[maybe_unused]] A &a, [[maybe_unused]] C c) {}
+  };
+
 public:
-  // Version conteneur (comportement existant)
+  // Conteneur indexable par operator[]
   template <class Container>
-  inline void operator() (Container &arr) const
+  constexpr void operator()(Container &arr) const
   {
     PS<Container, LT, 1, NumElements, (NumElements <= 1)> ps(arr, LT());
   }
 
-  // Version itérateurs
+  // Itérateurs aléatoires (suppose last - first valide)
   template <std::random_access_iterator Iterator>
-  inline void operator() (Iterator first, Iterator last) const
+  constexpr void operator()(Iterator first, Iterator last) const
   {
-    auto size = std::distance(first, last);
-    if (size != NumElements) return; // Sécurité
-
-    // Adapter pour utiliser les itérateurs comme un tableau
-    auto adapter = [first](size_t i) -> decltype(auto) { return *(first + i); };
-
+    auto size = static_cast<unsigned>(last - first);
+    if (size != NumElements) return;
     struct IteratorAdapter {
       Iterator base;
-      decltype(auto) operator[](size_t i) { return *(base + i); }
+      constexpr decltype(auto) operator[](size_t i) const noexcept {
+        return *(base + i);
+      }
     };
-
     IteratorAdapter adapted{first};
     PS<IteratorAdapter, LT, 1, NumElements, (NumElements <= 1)> ps(adapted, LT());
   }
 
-  // Version avec comparateur personnalisé
+  // Itérateurs + comparateur
   template <std::random_access_iterator Iterator, class Compare>
-  inline void operator() (Iterator first, Iterator last, Compare lt) const
+  constexpr void operator()(Iterator first, Iterator last, Compare lt) const
   {
-    auto size = std::distance(first, last);
+    auto size = static_cast<unsigned>(last - first);
     if (size != NumElements) return;
-
     struct IteratorAdapter {
       Iterator base;
-      decltype(auto) operator[](size_t i) { return *(base + i); }
+      constexpr decltype(auto) operator[](size_t i) noexcept { return *(base + i); }
     };
-
     IteratorAdapter adapted{first};
-    typedef Compare & C;
+    using C = Compare &;
     PS<IteratorAdapter, C, 1, NumElements, (NumElements <= 1)> ps(adapted, lt);
   }
 
-  // Version C++20 ranges
+  // Ranges
   template <std::ranges::random_access_range R>
-  inline void operator() (R&& range) const
+  constexpr void operator()(R &&range) const
   {
     (*this)(std::ranges::begin(range), std::ranges::end(range));
   }
 
   template <std::ranges::random_access_range R, class Compare>
-  inline void operator() (R&& range, Compare lt) const
+  constexpr void operator()(R &&range, Compare lt) const
   {
+    (*this)(std::ranges::begin(range), std::ranges::end(range), lt);
+  }
+};
+
+// Spécialisation optimisée pour 2 éléments
+template <>
+class StaticSort<2>
+{
+  struct LT {
+    template <class A, class B>
+    constexpr bool operator()(const A &a, const B &b) const noexcept(noexcept(a < b)) {
+      return a < b;
+    }
+  };
+
+public:
+  template <class Container>
+  constexpr void operator()(Container &arr) const noexcept(noexcept(arr[0] < arr[1])) {
+    if (arr[1] < arr[0]) {
+      auto tmp = std::move(arr[0]);
+      arr[0] = std::move(arr[1]);
+      arr[1] = std::move(tmp);
+    }
+  }
+
+  template <class Container, class Compare>
+  constexpr void operator()(Container &arr, Compare lt) const noexcept(noexcept(lt(arr[0], arr[1]))) {
+    if (lt(arr[1], arr[0])) {
+      auto tmp = std::move(arr[0]);
+      arr[0] = std::move(arr[1]);
+      arr[1] = std::move(tmp);
+    }
+  }
+
+  template <std::random_access_iterator Iterator>
+  constexpr void operator()(Iterator first, Iterator last) const {
+    if (last - first != 2) return;
+    if (*(first + 1) < *first) {
+      std::iter_swap(first, first + 1);
+    }
+  }
+
+  template <std::random_access_iterator Iterator, class Compare>
+  constexpr void operator()(Iterator first, Iterator last, Compare lt) const {
+    if (last - first != 2) return;
+    if (lt(*(first + 1), *first)) {
+      std::iter_swap(first, first + 1);
+    }
+  }
+
+  template <std::ranges::random_access_range R>
+  constexpr void operator()(R &&range) const {
+    (*this)(std::ranges::begin(range), std::ranges::end(range));
+  }
+
+  template <std::ranges::random_access_range R, class Compare>
+  constexpr void operator()(R &&range, Compare lt) const {
     (*this)(std::ranges::begin(range), std::ranges::end(range), lt);
   }
 };
@@ -147,91 +217,99 @@ public:
  * It skips the sorting-network if it is strictly increasing or decreasing. ;)
  * \tparam NumElements  The number of elements in the array or container to sort.
  */
-template <unsigned NumElements> class StaticTimSort
+template <unsigned NumElements>
+class StaticTimSort
 {
-	// Default less than comparator
-	struct LT
-	{
-		template <class A, class B>
-		inline bool operator () (const A &a, const B &b) const
-		{
-			return a < b;
-		}
-	};
-	
-	template <class A, class C> struct Intro
-	{
-		template <class T>
-		static inline void reverse([[maybe_unused]] T _, A &a)
-		{
-			if constexpr( NumElements > 1) {
-				unsigned left = 0, right = NumElements - 1;
-				while (left < right) {
-					T temp = a[left];
-					a[left++] = a[right];
-					a[right--] = temp;
-				}
-			}
-		}
-		
-		template <class T>
-		static inline bool sorted(T prev, A &a, C c)
-		{
-			if constexpr (NumElements < 8) return false;
-			
-			bool hasDecreasing = false;
-			bool hasIncreasing = false;
-			
-			for (unsigned i = 1; i < NumElements; ++i) {
-				T curr = a[i];
-				if (c(curr, prev)) {
-					hasDecreasing = true;
-				}
-				if (c(prev, curr)) {
-					hasIncreasing = true;
-				}
-				prev = curr;
-        if constexpr( NumElements > 22)
-        {
-          if (hasIncreasing && hasDecreasing)
-          {
-            return false;
+  struct LT {
+    template <class A, class B>
+    constexpr bool operator()(const A &a, const B &b) const noexcept(noexcept(a < b)) {
+      return a < b;
+    }
+  };
+
+  template <class A, class C> struct Intro {
+    template <class T>
+    static constexpr void reverse([[maybe_unused]] T, A &a) noexcept(noexcept(a[0] = a[0]) && std::is_nothrow_move_constructible_v<T>) {
+      if constexpr (NumElements > 1) {
+        if (std::is_constant_evaluated()) {
+          // Version manuelle pour constexpr
+          unsigned left = 0, right = NumElements - 1;
+          while (left < right) {
+            T tmp = std::move(a[left]);
+            a[left++] = std::move(a[right]);
+            a[right--] = std::move(tmp);
           }
+        } else {
+          // Utilisation de std::reverse pour les contextes runtime
+          std::reverse(&a[0], &a[NumElements]);
         }
       }
-			if (!hasDecreasing) {
-				return true;
-			}
-			if (!hasIncreasing) {
-				reverse(a[0], a);
-				return true;
-			}
-			return false;
-		}
-	};
-	
-	
-	
+    }
+
+    template <class T>
+    static constexpr bool sorted(T prev, A &a, C c)
+      noexcept(noexcept(c(a[1], a[0])) && noexcept(c(a[0], a[1])))
+    {
+      if constexpr (NumElements < 8) return false;
+
+      bool hasDec = false;
+      bool hasInc = false;
+
+      if constexpr (NumElements <= 22) {
+        // Scan complet sans early exit pour petites tailles
+        for (unsigned i = 1; i < NumElements; ++i) {
+          T curr = a[i];
+          if (c(curr, prev)) hasDec = true;
+          if (c(prev, curr)) hasInc = true;
+          prev = curr;
+        }
+      } else {
+        // Early exit pour grandes tailles
+        for (unsigned i = 1; i < NumElements; ++i) {
+          T curr = a[i];
+          if (c(curr, prev)) hasDec = true;
+          if (c(prev, curr)) hasInc = true;
+          prev = curr;
+          if (hasInc && hasDec) return false;
+        }
+      }
+
+      if (!hasDec) return true;
+      if (!hasInc) {
+        reverse(a[0], a);
+        return true;
+      }
+      return false;
+    }
+  };
+
 public:
-public:
-  // Version conteneur (comportement existant)
+  // Conteneur sans comparateur
   template <class Container>
-  inline void operator() (Container &arr) const
+  constexpr void operator()(Container &arr) const
   {
     if (!Intro<Container, LT>::sorted(arr[0], arr, LT()))
       StaticSort<NumElements>()(arr);
   }
 
-  // Version itérateurs
-  template <std::random_access_iterator Iterator>
-  inline void operator() (Iterator first, Iterator last) const
+  // Conteneur avec comparateur
+  template <class Container, class Compare>
+  constexpr void operator()(Container &arr, Compare lt) const
   {
-    auto size = std::distance(first, last);
+    if (!Intro<Container, Compare &>::sorted(arr[0], arr, lt))
+      StaticSort<NumElements>()(arr, lt);
+  }
+
+  // Itérateurs
+  template <std::random_access_iterator Iterator>
+  constexpr void operator()(Iterator first, Iterator last) const
+  {
+    auto size = static_cast<unsigned>(last - first);
     if (size != NumElements) return;
 
     struct IteratorAdapter {
       Iterator base;
-      decltype(auto) operator[](size_t i) { return *(base + i); }
+      constexpr decltype(auto) operator[](size_t i) noexcept { return *(base + i); }
     };
 
     IteratorAdapter adapted{first};
@@ -239,35 +317,37 @@ public:
       StaticSort<NumElements>()(first, last);
   }
 
-  // Version avec comparateur
+  // Itérateurs + comparateur
   template <std::random_access_iterator Iterator, class Compare>
-  inline void operator() (Iterator first, Iterator last, Compare lt) const
+  constexpr void operator()(Iterator first, Iterator last, Compare lt) const
   {
-    auto size = std::distance(first, last);
+    auto size = static_cast<unsigned>(last - first);
     if (size != NumElements) return;
 
     struct IteratorAdapter {
       Iterator base;
-      decltype(auto) operator[](size_t i) { return *(base + i); }
+      constexpr decltype(auto) operator[](size_t i) noexcept { return *(base + i); }
     };
 
     IteratorAdapter adapted{first};
-    typedef Compare & C;
+    using C = Compare &;
     if (!Intro<IteratorAdapter, C>::sorted(adapted[0], adapted, lt))
       StaticSort<NumElements>()(first, last, lt);
   }
 
-  // Version C++20 ranges
+  // Ranges
   template <std::ranges::random_access_range R>
-  inline void operator() (R&& range) const
+  constexpr void operator()(R &&range) const
   {
     (*this)(std::ranges::begin(range), std::ranges::end(range));
   }
 
   template <std::ranges::random_access_range R, class Compare>
-  inline void operator() (R&& range, Compare lt) const
+  constexpr void operator()(R &&range, Compare lt) const
   {
     (*this)(std::ranges::begin(range), std::ranges::end(range), lt);
   }
 };
+
 #endif
+

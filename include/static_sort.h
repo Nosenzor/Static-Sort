@@ -42,17 +42,26 @@ class StaticSort
   template <class A, class C, int I0, int I1>
   struct Swap {
     template <class T>
-    static constexpr void s(T &v0, T &v1, C c) noexcept(noexcept(c(v0, v1)) && std::is_nothrow_move_constructible_v<T>)
+    [[gnu::always_inline]] static constexpr void s(T &v0, T &v1, C c) noexcept(noexcept(c(v0, v1)) && std::is_nothrow_move_constructible_v<T>)
     {
-      //use move semantics to avoid unnecessary copies
-      if (c(v1, v0))
-      {
-        T tmp = std::move(v0);
-        v0 = std::move(v1);
-        v1 = std::move(tmp);
+      // Branchless swap for trivial types with std::less
+      if constexpr (std::is_trivially_copyable_v<T> &&
+                    std::is_same_v<C, LT> &&
+                    (std::is_arithmetic_v<T> || std::is_pointer_v<T>)) {
+        T min_val = (v1 < v0) ? v1 : v0;
+        T max_val = (v1 < v0) ? v0 : v1;
+        v0 = min_val;
+        v1 = max_val;
+      } else {
+        // Standard swap with move semantics for complex types
+        if (c(v1, v0)) {
+          T tmp = std::move(v0);
+          v0 = std::move(v1);
+          v1 = std::move(tmp);
+        }
       }
     }
-    constexpr Swap(A &a, C c) noexcept(noexcept(s(a[I0], a[I1], c))) {
+    [[gnu::always_inline]] constexpr Swap(A &a, C c) noexcept(noexcept(s(a[I0], a[I1], c))) {
       s(a[I0], a[I1], c);
     }
   };
@@ -196,6 +205,391 @@ public:
     if (lt(*(first + 1), *first)) {
       std::iter_swap(first, first + 1);
     }
+  }
+
+  template <std::ranges::random_access_range R>
+  constexpr void operator()(R &&range) const {
+    (*this)(std::ranges::begin(range), std::ranges::end(range));
+  }
+
+  template <std::ranges::random_access_range R, class Compare>
+  constexpr void operator()(R &&range, Compare lt) const {
+    (*this)(std::ranges::begin(range), std::ranges::end(range), lt);
+  }
+};
+
+// Spécialisation optimisée pour 3 éléments (3 comparaisons optimales)
+template <>
+class StaticSort<3>
+{
+  struct LT {
+    template <class A, class B>
+    constexpr bool operator()(const A &a, const B &b) const noexcept(noexcept(a < b)) {
+      return a < b;
+    }
+  };
+
+  template <class T, class C>
+  [[gnu::always_inline]] static constexpr void sort3(T &a, T &b, T &c, C lt) {
+    // Réseau optimal : 3 comparaisons
+    if (lt(b, a)) std::swap(a, b);
+    if (lt(c, b)) std::swap(b, c);
+    if (lt(b, a)) std::swap(a, b);
+  }
+
+public:
+  template <class Container>
+  constexpr void operator()(Container &arr) const {
+    sort3(arr[0], arr[1], arr[2], LT());
+  }
+
+  template <class Container, class Compare>
+  constexpr void operator()(Container &arr, Compare lt) const {
+    sort3(arr[0], arr[1], arr[2], lt);
+  }
+
+  template <std::random_access_iterator Iterator>
+  constexpr void operator()(Iterator first, Iterator last) const {
+    if (last - first != 3) return;
+    auto &a = *first, &b = *(first + 1), &c = *(first + 2);
+    sort3(a, b, c, LT());
+  }
+
+  template <std::random_access_iterator Iterator, class Compare>
+  constexpr void operator()(Iterator first, Iterator last, Compare lt) const {
+    if (last - first != 3) return;
+    auto &a = *first, &b = *(first + 1), &c = *(first + 2);
+    sort3(a, b, c, lt);
+  }
+
+  template <std::ranges::random_access_range R>
+  constexpr void operator()(R &&range) const {
+    (*this)(std::ranges::begin(range), std::ranges::end(range));
+  }
+
+  template <std::ranges::random_access_range R, class Compare>
+  constexpr void operator()(R &&range, Compare lt) const {
+    (*this)(std::ranges::begin(range), std::ranges::end(range), lt);
+  }
+};
+
+// Spécialisation optimisée pour 4 éléments (5 comparaisons optimales)
+template <>
+class StaticSort<4>
+{
+  struct LT {
+    template <class A, class B>
+    constexpr bool operator()(const A &a, const B &b) const noexcept(noexcept(a < b)) {
+      return a < b;
+    }
+  };
+
+  template <class T, class C>
+  [[gnu::always_inline]] static constexpr void sort4(T &a, T &b, T &c, T &d, C lt) {
+    // Réseau optimal : 5 comparaisons
+    if (lt(b, a)) std::swap(a, b);
+    if (lt(d, c)) std::swap(c, d);
+    if (lt(c, a)) std::swap(a, c);
+    if (lt(d, b)) std::swap(b, d);
+    if (lt(c, b)) std::swap(b, c);
+  }
+
+public:
+  template <class Container>
+  constexpr void operator()(Container &arr) const {
+    sort4(arr[0], arr[1], arr[2], arr[3], LT());
+  }
+
+  template <class Container, class Compare>
+  constexpr void operator()(Container &arr, Compare lt) const {
+    sort4(arr[0], arr[1], arr[2], arr[3], lt);
+  }
+
+  template <std::random_access_iterator Iterator>
+  constexpr void operator()(Iterator first, Iterator last) const {
+    if (last - first != 4) return;
+    auto &a = *first, &b = *(first + 1), &c = *(first + 2), &d = *(first + 3);
+    sort4(a, b, c, d, LT());
+  }
+
+  template <std::random_access_iterator Iterator, class Compare>
+  constexpr void operator()(Iterator first, Iterator last, Compare lt) const {
+    if (last - first != 4) return;
+    auto &a = *first, &b = *(first + 1), &c = *(first + 2), &d = *(first + 3);
+    sort4(a, b, c, d, lt);
+  }
+
+  template <std::ranges::random_access_range R>
+  constexpr void operator()(R &&range) const {
+    (*this)(std::ranges::begin(range), std::ranges::end(range));
+  }
+
+  template <std::ranges::random_access_range R, class Compare>
+  constexpr void operator()(R &&range, Compare lt) const {
+    (*this)(std::ranges::begin(range), std::ranges::end(range), lt);
+  }
+};
+
+// Spécialisation optimisée pour 5 éléments (9 comparaisons optimales)
+template <>
+class StaticSort<5>
+{
+  struct LT {
+    template <class A, class B>
+    constexpr bool operator()(const A &a, const B &b) const noexcept(noexcept(a < b)) {
+      return a < b;
+    }
+  };
+
+  template <class T, class C>
+  [[gnu::always_inline]] static constexpr void sort5(T &a, T &b, T &c, T &d, T &e, C lt) {
+    // Réseau optimal : 9 comparaisons
+    if (lt(b, a)) std::swap(a, b);
+    if (lt(d, c)) std::swap(c, d);
+    if (lt(c, a)) std::swap(a, c);
+    if (lt(e, b)) std::swap(b, e);
+    if (lt(d, b)) std::swap(b, d);
+    if (lt(e, c)) std::swap(c, e);
+    if (lt(c, a)) std::swap(a, c);
+    if (lt(d, c)) std::swap(c, d);
+    if (lt(e, d)) std::swap(d, e);
+  }
+
+public:
+  template <class Container>
+  constexpr void operator()(Container &arr) const {
+    sort5(arr[0], arr[1], arr[2], arr[3], arr[4], LT());
+  }
+
+  template <class Container, class Compare>
+  constexpr void operator()(Container &arr, Compare lt) const {
+    sort5(arr[0], arr[1], arr[2], arr[3], arr[4], lt);
+  }
+
+  template <std::random_access_iterator Iterator>
+  constexpr void operator()(Iterator first, Iterator last) const {
+    if (last - first != 5) return;
+    auto &a = *first, &b = *(first + 1), &c = *(first + 2), &d = *(first + 3), &e = *(first + 4);
+    sort5(a, b, c, d, e, LT());
+  }
+
+  template <std::random_access_iterator Iterator, class Compare>
+  constexpr void operator()(Iterator first, Iterator last, Compare lt) const {
+    if (last - first != 5) return;
+    auto &a = *first, &b = *(first + 1), &c = *(first + 2), &d = *(first + 3), &e = *(first + 4);
+    sort5(a, b, c, d, e, lt);
+  }
+
+  template <std::ranges::random_access_range R>
+  constexpr void operator()(R &&range) const {
+    (*this)(std::ranges::begin(range), std::ranges::end(range));
+  }
+
+  template <std::ranges::random_access_range R, class Compare>
+  constexpr void operator()(R &&range, Compare lt) const {
+    (*this)(std::ranges::begin(range), std::ranges::end(range), lt);
+  }
+};
+
+// Spécialisation optimisée pour 6 éléments (12 comparaisons optimales)
+template <>
+class StaticSort<6>
+{
+  struct LT {
+    template <class A, class B>
+    constexpr bool operator()(const A &a, const B &b) const noexcept(noexcept(a < b)) {
+      return a < b;
+    }
+  };
+
+  template <class T, class C>
+  [[gnu::always_inline]] static constexpr void sort6(T &a, T &b, T &c, T &d, T &e, T &f, C lt) {
+    // Réseau optimal : 12 comparaisons
+    if (lt(b, a)) std::swap(a, b);
+    if (lt(d, c)) std::swap(c, d);
+    if (lt(f, e)) std::swap(e, f);
+    if (lt(c, a)) std::swap(a, c);
+    if (lt(e, c)) std::swap(c, e);
+    if (lt(d, b)) std::swap(b, d);
+    if (lt(f, d)) std::swap(d, f);
+    if (lt(e, a)) std::swap(a, e);
+    if (lt(d, b)) std::swap(b, d);
+    if (lt(f, b)) std::swap(b, f);
+    if (lt(d, c)) std::swap(c, d);
+    if (lt(e, d)) std::swap(d, e);
+  }
+
+public:
+  template <class Container>
+  constexpr void operator()(Container &arr) const {
+    sort6(arr[0], arr[1], arr[2], arr[3], arr[4], arr[5], LT());
+  }
+
+  template <class Container, class Compare>
+  constexpr void operator()(Container &arr, Compare lt) const {
+    sort6(arr[0], arr[1], arr[2], arr[3], arr[4], arr[5], lt);
+  }
+
+  template <std::random_access_iterator Iterator>
+  constexpr void operator()(Iterator first, Iterator last) const {
+    if (last - first != 6) return;
+    auto &a = *first, &b = *(first + 1), &c = *(first + 2),
+         &d = *(first + 3), &e = *(first + 4), &f = *(first + 5);
+    sort6(a, b, c, d, e, f, LT());
+  }
+
+  template <std::random_access_iterator Iterator, class Compare>
+  constexpr void operator()(Iterator first, Iterator last, Compare lt) const {
+    if (last - first != 6) return;
+    auto &a = *first, &b = *(first + 1), &c = *(first + 2),
+         &d = *(first + 3), &e = *(first + 4), &f = *(first + 5);
+    sort6(a, b, c, d, e, f, lt);
+  }
+
+  template <std::ranges::random_access_range R>
+  constexpr void operator()(R &&range) const {
+    (*this)(std::ranges::begin(range), std::ranges::end(range));
+  }
+
+  template <std::ranges::random_access_range R, class Compare>
+  constexpr void operator()(R &&range, Compare lt) const {
+    (*this)(std::ranges::begin(range), std::ranges::end(range), lt);
+  }
+};
+
+// Spécialisation optimisée pour 7 éléments (16 comparaisons optimales)
+template <>
+class StaticSort<7>
+{
+  struct LT {
+    template <class A, class B>
+    constexpr bool operator()(const A &a, const B &b) const noexcept(noexcept(a < b)) {
+      return a < b;
+    }
+  };
+
+  template <class T, class C>
+  [[gnu::always_inline]] static constexpr void sort7(T &a, T &b, T &c, T &d, T &e, T &f, T &g, C lt) {
+    // Réseau optimal : 16 comparaisons
+    if (lt(b, a)) std::swap(a, b);
+    if (lt(d, c)) std::swap(c, d);
+    if (lt(f, e)) std::swap(e, f);
+    if (lt(c, a)) std::swap(a, c);
+    if (lt(e, c)) std::swap(c, e);
+    if (lt(g, e)) std::swap(e, g);
+    if (lt(d, b)) std::swap(b, d);
+    if (lt(f, d)) std::swap(d, f);
+    if (lt(e, a)) std::swap(a, e);
+    if (lt(g, c)) std::swap(c, g);
+    if (lt(d, b)) std::swap(b, d);
+    if (lt(f, b)) std::swap(b, f);
+    if (lt(g, d)) std::swap(d, g);
+    if (lt(f, c)) std::swap(c, f);
+    if (lt(g, e)) std::swap(e, g);
+    if (lt(f, d)) std::swap(d, f);
+  }
+
+public:
+  template <class Container>
+  constexpr void operator()(Container &arr) const {
+    sort7(arr[0], arr[1], arr[2], arr[3], arr[4], arr[5], arr[6], LT());
+  }
+
+  template <class Container, class Compare>
+  constexpr void operator()(Container &arr, Compare lt) const {
+    sort7(arr[0], arr[1], arr[2], arr[3], arr[4], arr[5], arr[6], lt);
+  }
+
+  template <std::random_access_iterator Iterator>
+  constexpr void operator()(Iterator first, Iterator last) const {
+    if (last - first != 7) return;
+    auto &a = *first, &b = *(first + 1), &c = *(first + 2), &d = *(first + 3),
+         &e = *(first + 4), &f = *(first + 5), &g = *(first + 6);
+    sort7(a, b, c, d, e, f, g, LT());
+  }
+
+  template <std::random_access_iterator Iterator, class Compare>
+  constexpr void operator()(Iterator first, Iterator last, Compare lt) const {
+    if (last - first != 7) return;
+    auto &a = *first, &b = *(first + 1), &c = *(first + 2), &d = *(first + 3),
+         &e = *(first + 4), &f = *(first + 5), &g = *(first + 6);
+    sort7(a, b, c, d, e, f, g, lt);
+  }
+
+  template <std::ranges::random_access_range R>
+  constexpr void operator()(R &&range) const {
+    (*this)(std::ranges::begin(range), std::ranges::end(range));
+  }
+
+  template <std::ranges::random_access_range R, class Compare>
+  constexpr void operator()(R &&range, Compare lt) const {
+    (*this)(std::ranges::begin(range), std::ranges::end(range), lt);
+  }
+};
+
+// Spécialisation optimisée pour 8 éléments (19 comparaisons optimales)
+template <>
+class StaticSort<8>
+{
+  struct LT {
+    template <class A, class B>
+    constexpr bool operator()(const A &a, const B &b) const noexcept(noexcept(a < b)) {
+      return a < b;
+    }
+  };
+
+  template <class T, class C>
+  [[gnu::always_inline]] static constexpr void sort8(T &a, T &b, T &c, T &d, T &e, T &f, T &g, T &h, C lt) {
+    // Réseau optimal : 19 comparaisons
+    if (lt(b, a)) std::swap(a, b);
+    if (lt(d, c)) std::swap(c, d);
+    if (lt(f, e)) std::swap(e, f);
+    if (lt(h, g)) std::swap(g, h);
+    if (lt(c, a)) std::swap(a, c);
+    if (lt(d, b)) std::swap(b, d);
+    if (lt(g, e)) std::swap(e, g);
+    if (lt(h, f)) std::swap(f, h);
+    if (lt(e, a)) std::swap(a, e);
+    if (lt(f, b)) std::swap(b, f);
+    if (lt(g, c)) std::swap(c, g);
+    if (lt(h, d)) std::swap(d, h);
+    if (lt(e, c)) std::swap(c, e);
+    if (lt(f, d)) std::swap(d, f);
+    if (lt(b, a)) std::swap(a, b);
+    if (lt(d, c)) std::swap(c, d);
+    if (lt(f, e)) std::swap(e, f);
+    if (lt(h, g)) std::swap(g, h);
+    if (lt(d, b)) std::swap(b, d);
+    if (lt(f, b)) std::swap(b, f);
+    if (lt(h, d)) std::swap(d, h);
+    if (lt(f, d)) std::swap(d, f);
+  }
+
+public:
+  template <class Container>
+  constexpr void operator()(Container &arr) const {
+    sort8(arr[0], arr[1], arr[2], arr[3], arr[4], arr[5], arr[6], arr[7], LT());
+  }
+
+  template <class Container, class Compare>
+  constexpr void operator()(Container &arr, Compare lt) const {
+    sort8(arr[0], arr[1], arr[2], arr[3], arr[4], arr[5], arr[6], arr[7], lt);
+  }
+
+  template <std::random_access_iterator Iterator>
+  constexpr void operator()(Iterator first, Iterator last) const {
+    if (last - first != 8) return;
+    auto &a = *first, &b = *(first + 1), &c = *(first + 2), &d = *(first + 3),
+         &e = *(first + 4), &f = *(first + 5), &g = *(first + 6), &h = *(first + 7);
+    sort8(a, b, c, d, e, f, g, h, LT());
+  }
+
+  template <std::random_access_iterator Iterator, class Compare>
+  constexpr void operator()(Iterator first, Iterator last, Compare lt) const {
+    if (last - first != 8) return;
+    auto &a = *first, &b = *(first + 1), &c = *(first + 2), &d = *(first + 3),
+         &e = *(first + 4), &f = *(first + 5), &g = *(first + 6), &h = *(first + 7);
+    sort8(a, b, c, d, e, f, g, h, lt);
   }
 
   template <std::ranges::random_access_range R>

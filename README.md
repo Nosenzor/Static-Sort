@@ -17,7 +17,28 @@ You can also copy and paste the code from `static_sort.h` directly!
 Requirements
 ------------
 
-A C++98 and above compiler.
+A C++20 and above compiler.
+
+Building and Running Benchmarks
+--------------------------------
+
+The project uses Google Benchmark to compare `StaticSort`, `StaticTimSort`, and `std::sort`.
+
+```bash
+# Configure and build
+mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+cmake --build . -j
+
+# Run benchmarks
+./bench_static_sort
+
+# Run with specific options
+./bench_static_sort --benchmark_min_time=1s
+./bench_static_sort --benchmark_format=json --benchmark_out=results.json
+```
+
+CMake will automatically download and compile Google Benchmark using FetchContent.
 
 Usage
 -----

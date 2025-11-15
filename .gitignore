@@ -3,41 +3,6 @@ build/
 cmake-build-*/
 out/
 
-# CMake
-CMakeCache.txt
-CMakeFiles/
-CMakeScripts/
-cmake_install.cmake
-install_manifest.txt
-compile_commands.json
-CTestTestfile.cmake
-_deps
-
-# Executables
-*.exe
-*.out
-*.app
-example_main
-bench_6
-bench_10
-bench_n
-bench_pair_sort
-
-# Object files
-*.o
-*.obj
-*.lo
-*.slo
-
-# Libraries
-*.a
-*.la
-*.lib
-*.so
-*.so.*
-*.dylib
-*.dll
-
 # IDE files
 .idea/
 .vscode/
@@ -46,29 +11,33 @@ bench_pair_sort
 *~
 .DS_Store
 
-# Xcode
-*.xcodeproj
-*.xcworkspace
-xcuserdata/
-DerivedData/
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
 
-# Visual Studio
-.vs/
-*.user
-*.userosscache
-*.sln.docstates
-*.vcxproj
-*.vcxproj.filters
-*.sln
+# Compiled binaries
+*.exe
+*.out
+*.app
+*.dylib
+*.so
+*.a
+bench_static_sort
+example_main
 
-# Profiling
-*.gcda
-*.gcno
-*.gcov
+# vcpkg
+vcpkg_installed/
 
-# Debug files
-*.dSYM/
-*.su
-*.idb
-*.pdb
+# Benchmark results
+*.json
+*.csv
+
+# Generated files
+*.o
+*.obj
+*.d
 

@@ -18,6 +18,16 @@
  * \tparam NumElements  The number of elements in the array or container to sort.
  */
 
+#if defined(__GNUC__) || defined(__clang__)
+#define STATIC_SORT_FORCE_INLINE __attribute__((always_inline)) inline
+#elif defined(_MSC_VER)
+#define STATIC_SORT_FORCE_INLINE __forceinline
+#else
+#define STATIC_SORT_FORCE_INLINE inline
+#endif
+
+
+
 template<typename T>
 concept Swappable = requires(T a, T b)
 {
@@ -35,13 +45,34 @@ namespace detail
   struct DefaultLess
   {
     template<class A, class B>
-    constexpr bool operator()(const A& a, const B& b) const noexcept(noexcept(a < b)) { return a < b; }
+    STATIC_SORT_FORCE_INLINE constexpr bool operator()(const A& a, const B& b) const noexcept(noexcept(a < b))
+    {
+      return a < b;
+    }
   };
 }
 
 template<class T, class C>
-[[gnu::always_inline]] inline constexpr void swap_if(T& a, T& b, C c)
-  noexcept(noexcept(c(a, b)) && std::is_nothrow_move_constructible_v<T>) { if (c(b, a)) std::ranges::swap(a, b); }
+STATIC_SORT_FORCE_INLINE constexpr void swap_if(T& a, T& b, C c)
+  noexcept(noexcept(c(a, b)) && std::is_nothrow_move_constructible_v<T>)
+{
+  // Branchless swap pour types triviaux avec comparateur par défaut
+  if constexpr (std::is_trivially_copyable_v<T> &&
+                std::is_same_v<C, detail::DefaultLess> &&
+                (std::is_arithmetic_v<T> || std::is_pointer_v<T>))
+  {
+    const bool should_swap = c(b, a);
+    T temp_a = a;
+    T temp_b = b;
+    // Utilise l'arithmétique ternaire qui peut être optimisée en CMOV
+    a = should_swap ? temp_b : temp_a;
+    b = should_swap ? temp_a : temp_b;
+  }
+  else
+  {
+    if (c(b, a)) std::ranges::swap(a, b);
+  }
+}
 
 template<unsigned NumElements>
 class StaticSort
@@ -51,7 +82,7 @@ class StaticSort
   template<class A, class C, int I0, int I1>
   struct Swap
   {
-    [[gnu::always_inline]] constexpr Swap(A& a, C c) noexcept(noexcept(swap_if(a[I0], a[I1], c))) { swap_if(a[I0], a[I1], c); }
+    STATIC_SORT_FORCE_INLINE constexpr Swap(A& a, C c) noexcept(noexcept(swap_if(a[I0], a[I1], c))) { swap_if(a[I0], a[I1], c); }
   };
 
   template<class A, class C, int I, int J, int X, int Y>
@@ -663,32 +694,23 @@ class StaticTimSort
       bool hasDec = false;
       bool hasInc = false;
 
-      if constexpr (NumElements <= 22)
+      // Utilisation de pointeurs pour éviter les calculs d'index répétés
+      auto* ptr = &a[0];
+      auto* end = ptr + NumElements;
+
+      for (auto* p = ptr + 1; p < end; ++p)
       {
-        // Scan complet sans early exit pour petites tailles
-        for (unsigned i = 1; i < NumElements; ++i)
-        {
-          T curr = a[i];
-          if (c(curr, prev)) hasDec = true;
-          if (c(prev, curr)) hasInc = true;
-          prev = curr;
-        }
-      }
-      else
-      {
-        // Early exit pour grandes tailles
-        for (unsigned i = 1; i < NumElements; ++i)
-        {
-          T curr = a[i];
-          if (c(curr, prev)) hasDec = true;
-          if (c(prev, curr)) hasInc = true;
-          prev = curr;
-          if (hasInc && hasDec) return false;
-        }
+        T curr = *p;
+        // Accumulation avec OR bitwise (peut être plus efficace que branchement)
+        hasDec |= c(curr, prev);
+        hasInc |= c(prev, curr);
+        prev = curr;
+        // Early exit dès qu'on détecte une séquence mixte
+        if (hasInc && hasDec) [[unlikely]] return false;
       }
 
-      if (!hasDec) return true;
-      if (!hasInc)
+      if (!hasDec) [[likely]] return true;  // Strictement croissant
+      if (!hasInc) [[likely]]                   // Strictement décroissant
       {
         reverse(a[0], a);
         return true;

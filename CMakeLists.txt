@@ -32,10 +32,10 @@ FetchContent_MakeAvailable(benchmark)
 # Build benchmark executable
 add_executable(bench_static_sort benchmark/bench_static_sort.cpp)
 target_link_libraries(bench_static_sort PRIVATE static_sort benchmark::benchmark)
-target_compile_options(bench_static_sort PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_options(bench_static_sort PRIVATE -Wall)
 
 # Build test executable
 add_executable(test_correctness test/test_correctness.cpp)
 target_link_libraries(test_correctness PRIVATE static_sort)
-target_compile_options(test_correctness PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_options(test_correctness PRIVATE -Wall)
 

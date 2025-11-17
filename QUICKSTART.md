@@ -296,6 +296,5 @@ auto median = sensor_readings[5];
 
 **For more details, see:**
 - [PERFORMANCE.md](PERFORMANCE.md) - Detailed performance analysis
-- [OPTIMIZATIONS.md](OPTIMIZATIONS.md) - Technical implementation details
 - [README.md](README.md) - Project overview
 
